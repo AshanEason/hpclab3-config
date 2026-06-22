@@ -1,0 +1,23 @@
+[Unit]
+Description=Slurm node daemon
+After=network-online.target munge.service remote-fs.target
+Wants=network-online.target
+Requires=munge.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p /var/spool/slurmd
+ExecStartPre=/usr/bin/touch /var/log/slurmd.log
+ExecStartPre=/bin/chmod 755 /var/spool/slurmd
+ExecStartPre=/bin/chmod 644 /var/log/slurmd.log
+ExecStart=/usr/sbin/slurmd -D
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+LimitNOFILE=131072
+LimitMEMLOCK=infinity
+TasksMax=infinity
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

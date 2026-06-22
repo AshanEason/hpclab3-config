@@ -1,0 +1,23 @@
+[Unit]
+Description=Slurm controller daemon
+After=network-online.target munge.service
+Wants=network-online.target
+Requires=munge.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p /var/spool/slurmctld
+ExecStartPre=/usr/bin/touch /var/log/slurmctld.log
+ExecStartPre=/bin/chmod 755 /var/spool/slurmctld
+ExecStartPre=/bin/chmod 644 /var/log/slurmctld.log
+ExecStart=/usr/sbin/slurmctld -D
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+LimitNOFILE=131072
+LimitMEMLOCK=infinity
+TasksMax=infinity
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

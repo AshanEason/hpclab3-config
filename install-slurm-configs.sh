@@ -18,4 +18,19 @@ elif [ "$role" = "controller" ]; then
   sudo install -m 644 gres.conf /etc/slurm/gres.conf
 fi
 
+if [ "$role" = "controller" ]; then
+  sudo install -m 644 slurmctld.service /etc/systemd/system/slurmctld.service
+  sudo mkdir -p /var/spool/slurmctld
+  sudo touch /var/log/slurmctld.log
+  sudo chmod 755 /var/spool/slurmctld
+  sudo chmod 644 /var/log/slurmctld.log
+else
+  sudo install -m 644 slurmd.service /etc/systemd/system/slurmd.service
+  sudo mkdir -p /var/spool/slurmd
+  sudo touch /var/log/slurmd.log
+  sudo chmod 755 /var/spool/slurmd
+  sudo chmod 644 /var/log/slurmd.log
+fi
+
+sudo systemctl daemon-reload
 ls -l /etc/slurm
