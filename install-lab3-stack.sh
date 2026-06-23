@@ -122,6 +122,25 @@ cuda_make_args() {
   exit 1
 }
 
+copy_cuda_runtime_libs() {
+  dest="$LAB3_ROOT/cuda-libs/lib"
+  sudo install -d -o judge -g judge -m 755 "$dest"
+
+  for dir in /usr/local/cuda/lib64 /usr/local/cuda-*/lib64 /usr/lib/x86_64-linux-gnu; do
+    if [ -d "$dir" ]; then
+      find "$dir" -maxdepth 1 \( -name 'libcudart.so*' -o -name 'libnvrtc.so*' \) -print
+    fi
+  done | while IFS= read -r lib; do
+    sudo cp -P "$lib" "$dest/"
+  done
+
+  sudo chown -hR judge:judge "$LAB3_ROOT/cuda-libs"
+  ls -l "$dest"/libcudart.so* 2>/dev/null || {
+    echo "Could not copy libcudart.so* into $dest" >&2
+    exit 1
+  }
+}
+
 build_nccl_library() {
   if [ -f "$NCCL_PREFIX/include/nccl.h" ] && [ -f "$NCCL_PREFIX/lib/libnccl.so" ]; then
     return
@@ -146,6 +165,9 @@ build_nccl_tests() {
   if [ "$role" != "gpu01" ]; then
     return
   fi
+  install_cuda_and_nccl_deps
+  copy_cuda_runtime_libs
+
   if [ -x "$NCCL_TESTS_PREFIX/bin/all_reduce_perf" ]; then
     "$NCCL_TESTS_PREFIX/bin/all_reduce_perf" -h | head -5 || true
     return
