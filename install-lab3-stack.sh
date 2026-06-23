@@ -83,11 +83,42 @@ install_cuda_and_nccl_deps() {
     wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb -O "$tmpdeb"
     sudo dpkg -i "$tmpdeb"
     sudo apt-get update
-    sudo apt-get install -y cuda-toolkit-12-2
+    if apt-cache show cuda-toolkit-12-2 >/dev/null 2>&1; then
+      sudo apt-get install -y cuda-toolkit-12-2
+    elif apt-cache show nvidia-cuda-toolkit >/dev/null 2>&1; then
+      sudo apt-get install -y nvidia-cuda-toolkit
+    elif apt-cache show cuda-toolkit >/dev/null 2>&1; then
+      sudo apt-get install -y cuda-toolkit
+    else
+      echo "No CUDA toolkit package found. Please install nvcc first." >&2
+      exit 1
+    fi
   fi
 
   sudo apt-get update
   sudo apt-get install -y libnccl2 libnccl-dev
+}
+
+cuda_make_args() {
+  if [ -x /usr/local/cuda/bin/nvcc ]; then
+    echo "CUDA_HOME=/usr/local/cuda CUDA_INC=/usr/local/cuda/include CUDA_LIB=/usr/local/cuda/lib64 NVCC=/usr/local/cuda/bin/nvcc"
+    return
+  fi
+
+  for cuda_dir in /usr/local/cuda-*; do
+    if [ -x "$cuda_dir/bin/nvcc" ]; then
+      echo "CUDA_HOME=$cuda_dir CUDA_INC=$cuda_dir/include CUDA_LIB=$cuda_dir/lib64 NVCC=$cuda_dir/bin/nvcc"
+      return
+    fi
+  done
+
+  if command -v nvcc >/dev/null 2>&1; then
+    echo "CUDA_HOME=/usr CUDA_INC=/usr/include CUDA_LIB=/usr/lib/x86_64-linux-gnu NVCC=$(command -v nvcc)"
+    return
+  fi
+
+  echo "nvcc not found after CUDA installation" >&2
+  exit 1
 }
 
 build_nccl_tests() {
@@ -101,15 +132,11 @@ build_nccl_tests() {
 
   install_cuda_and_nccl_deps
 
-  cuda_home=/usr/local/cuda
-  if [ ! -x "$cuda_home/bin/nvcc" ] && [ -x /usr/local/cuda-12.2/bin/nvcc ]; then
-    cuda_home=/usr/local/cuda-12.2
-  fi
-
   rm -rf "$BUILD_ROOT/nccl-tests"
   mkdir -p "$BUILD_ROOT"
   git clone --depth 1 --branch v2.17.6 https://github.com/NVIDIA/nccl-tests.git "$BUILD_ROOT/nccl-tests"
-  make -C "$BUILD_ROOT/nccl-tests" -j"$(nproc)" MPI=0 CUDA_HOME="$cuda_home" NCCL_HOME=/usr
+  # shellcheck disable=SC2086
+  make -C "$BUILD_ROOT/nccl-tests" -j"$(nproc)" MPI=0 $(cuda_make_args)
 
   sudo install -d -o judge -g judge -m 755 "$NCCL_TESTS_PREFIX/bin"
   sudo install -m 755 "$BUILD_ROOT/nccl-tests/build/all_reduce_perf" "$NCCL_TESTS_PREFIX/bin/all_reduce_perf"
