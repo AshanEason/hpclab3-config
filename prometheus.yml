@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 1s
+  evaluation_interval: 1s
+
+scrape_configs:
+  - job_name: node
+    static_configs:
+      - targets:
+          - controller:9100
+          - cpu01:9100
+          - gpu01:9100
+
+  - job_name: process
+    static_configs:
+      - targets:
+          - controller:9256
+          - cpu01:9256
+          - gpu01:9256
+
+  - job_name: gpu
+    static_configs:
+      - targets:
+          - gpu01:9835
