@@ -13,6 +13,7 @@ LAB3_ROOT=/home/judge/opt/lab3
 BUILD_ROOT=/tmp/lab3-build
 APPTAINER_PREFIX="$LAB3_ROOT/apptainer-1.4.4"
 STRESS_PREFIX="$LAB3_ROOT/stress-ng-0.19.04"
+NCCL_PREFIX="$LAB3_ROOT/nccl-2.17.1"
 NCCL_TESTS_PREFIX="$LAB3_ROOT/nccl-tests-2.17.6"
 
 apt_install_common() {
@@ -96,29 +97,49 @@ install_cuda_and_nccl_deps() {
   fi
 
   sudo apt-get update
-  sudo apt-get install -y libnccl2 libnccl-dev
+  sudo apt-get install -y libibverbs-dev libnuma-dev
 }
 
 cuda_make_args() {
   if [ -x /usr/local/cuda/bin/nvcc ]; then
-    echo "CUDA_HOME=/usr/local/cuda CUDA_INC=/usr/local/cuda/include CUDA_LIB=/usr/local/cuda/lib64 NVCC=/usr/local/cuda/bin/nvcc"
+    echo "CUDA_HOME=/usr/local/cuda CUDA_INC=/usr/local/cuda/include CUDA_LIB=/usr/local/cuda/lib64 NVCC=/usr/local/cuda/bin/nvcc NVCC_GENCODE=-gencode=arch=compute_70,code=sm_70"
     return
   fi
 
   for cuda_dir in /usr/local/cuda-*; do
     if [ -x "$cuda_dir/bin/nvcc" ]; then
-      echo "CUDA_HOME=$cuda_dir CUDA_INC=$cuda_dir/include CUDA_LIB=$cuda_dir/lib64 NVCC=$cuda_dir/bin/nvcc"
+      echo "CUDA_HOME=$cuda_dir CUDA_INC=$cuda_dir/include CUDA_LIB=$cuda_dir/lib64 NVCC=$cuda_dir/bin/nvcc NVCC_GENCODE=-gencode=arch=compute_70,code=sm_70"
       return
     fi
   done
 
   if command -v nvcc >/dev/null 2>&1; then
-    echo "CUDA_HOME=/usr CUDA_INC=/usr/include CUDA_LIB=/usr/lib/x86_64-linux-gnu NVCC=$(command -v nvcc)"
+    echo "CUDA_HOME=/usr CUDA_INC=/usr/include CUDA_LIB=/usr/lib/x86_64-linux-gnu NVCC=$(command -v nvcc) NVCC_GENCODE=-gencode=arch=compute_70,code=sm_70"
     return
   fi
 
   echo "nvcc not found after CUDA installation" >&2
   exit 1
+}
+
+build_nccl_library() {
+  if [ -f "$NCCL_PREFIX/include/nccl.h" ] && [ -f "$NCCL_PREFIX/lib/libnccl.so" ]; then
+    return
+  fi
+
+  install_cuda_and_nccl_deps
+
+  rm -rf "$BUILD_ROOT/nccl"
+  mkdir -p "$BUILD_ROOT"
+  git clone --depth 1 --branch v2.17.1-1 https://github.com/NVIDIA/nccl.git "$BUILD_ROOT/nccl"
+  # shellcheck disable=SC2086
+  make -C "$BUILD_ROOT/nccl" -j"$(nproc)" src.build $(cuda_make_args) CUDARTLIB=cudart
+
+  sudo rm -rf "$NCCL_PREFIX"
+  sudo install -d -o judge -g judge -m 755 "$NCCL_PREFIX"
+  # shellcheck disable=SC2086
+  sudo make -C "$BUILD_ROOT/nccl" src.install PREFIX="$NCCL_PREFIX" $(cuda_make_args) CUDARTLIB=cudart
+  sudo chown -R judge:judge "$NCCL_PREFIX"
 }
 
 build_nccl_tests() {
@@ -130,13 +151,13 @@ build_nccl_tests() {
     return
   fi
 
-  install_cuda_and_nccl_deps
+  build_nccl_library
 
   rm -rf "$BUILD_ROOT/nccl-tests"
   mkdir -p "$BUILD_ROOT"
   git clone --depth 1 --branch v2.17.6 https://github.com/NVIDIA/nccl-tests.git "$BUILD_ROOT/nccl-tests"
   # shellcheck disable=SC2086
-  make -C "$BUILD_ROOT/nccl-tests" -j"$(nproc)" MPI=0 $(cuda_make_args)
+  make -C "$BUILD_ROOT/nccl-tests" -j"$(nproc)" MPI=0 NCCL_HOME="$NCCL_PREFIX" $(cuda_make_args)
 
   sudo install -d -o judge -g judge -m 755 "$NCCL_TESTS_PREFIX/bin"
   sudo install -m 755 "$BUILD_ROOT/nccl-tests/build/all_reduce_perf" "$NCCL_TESTS_PREFIX/bin/all_reduce_perf"
